@@ -1,0 +1,65 @@
+public enum ServerRole {
+    LOOKING_FOR_LEADER,
+    FOLLOWING,
+    LEADING;
+}
+class ReplicationModule…
+
+  private void startLeaderElection() {
+      replicationState.setGeneration(replicationState.getGeneration() + 1);
+      registerSelfVote();
+      requestVoteFrom(followers);
+  }
+class ReplicationModule…
+
+  VoteResponse handleVoteRequest(VoteRequest voteRequest) {
+      VoteTracker voteTracker = replicationState.getVoteTracker();
+      Long requestGeneration = voteRequest.getGeneration();
+      if (replicationState.getGeneration() > requestGeneration) {
+          return rejectVote();
+
+      } else if (replicationState.getGeneration() < requestGeneration) {
+          becomeFollower(-1, requestGeneration);
+          voteTracker.registerVote(voteRequest.getServerId());
+          return grantVote();
+      }
+
+      return handleVoteRequestForSameGeneration(voteRequest);
+  }
+
+  private VoteResponse handleVoteRequestForSameGeneration(VoteRequest voteRequest) {
+      Long requestGeneration = voteRequest.getGeneration();
+      VoteTracker voteTracker = replicationState.getVoteTracker();
+
+      if (voteTracker.alreadyVoted()) {
+          return voteTracker.grantedVoteForSameServer(voteRequest.getServerId()) ?
+                  grantVote():rejectVote();
+
+      }
+
+      if (voteRequest.getLogIndex() >= (Long) wal.getLastLogEntryId()) {
+          becomeFollower(NO_LEADER_ID, requestGeneration);
+          voteTracker.registerVote(voteRequest.getServerId());
+          return grantVote();
+      }
+
+      return rejectVote();
+  }
+
+  private void becomeFollower(int leaderId, Long generation) {
+      replicationState.setGeneration(generation);
+      replicationState.setLeaderId(leaderId);
+      transitionTo(ServerRole.FOLLOWING);
+  }
+
+  private VoteResponse grantVote() {
+      return VoteResponse.granted(serverId(),
+              replicationState.getGeneration(),
+              wal.getLastLogEntryId());
+  }
+
+  private VoteResponse rejectVote() {
+      return VoteResponse.rejected(serverId(),
+              replicationState.getGeneration(),
+              wal.getLastLogEntryId());
+  }
